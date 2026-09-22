@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Local precios · T+0</title>
+<style>
+  :root{
+    --bg:#f6f7f9; --panel:#ffffff; --panel2:#fafbfd; --border:#e9ecf1; --grid:#f0f2f6;
+    --text:#1b2434; --muted:#6a7688; --faint:#9aa4b4;
+    --accent:#345995; --up:#1f9d6b; --down:#d0485f; --gold:#b58a1b; --goldbg:#fbf3dc; --tint:#f2f5fb;
+    --shadow:0 1px 2px rgba(20,28,48,.04);
+  }
+  @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+    --bg:#0c1017; --panel:#151b26; --panel2:#111722; --border:#232c3b; --grid:#1a2230;
+    --text:#e7edf6; --muted:#93a1b5; --faint:#5f6f85;
+    --accent:#6d8fd6; --up:#35c98d; --down:#f0687d; --gold:#e3b53f; --goldbg:#332a10; --tint:#131c2b;
+    --shadow:0 1px 2px rgba(0,0,0,.35);
+  }}
+  :root[data-theme="dark"]{
+    --bg:#0c1017; --panel:#151b26; --panel2:#111722; --border:#232c3b; --grid:#1a2230;
+    --text:#e7edf6; --muted:#93a1b5; --faint:#5f6f85;
+    --accent:#6d8fd6; --up:#35c98d; --down:#f0687d; --gold:#e3b53f; --goldbg:#332a10; --tint:#131c2b;
+    --shadow:0 1px 2px rgba(0,0,0,.35);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font-size:13px;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    font-variant-numeric:tabular-nums;-webkit-font-smoothing:antialiased;line-height:1.45}
+  .wrap{max-width:1040px;margin:0 auto;padding:22px 24px 72px}
+  header{display:flex;align-items:baseline;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:16px}
+  h1{font-size:17px;margin:0;letter-spacing:.01em;font-weight:600;display:flex;align-items:center;gap:10px}
+  h1 .tag{font-size:9.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--accent);
+    border:1px solid var(--border);padding:2px 7px;border-radius:5px}
+  .sub{color:var(--muted);font-size:11.5px;margin-top:4px;letter-spacing:.01em}
+  .status{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+  .dot{width:7px;height:7px;border-radius:50%;background:var(--up);display:inline-block;animation:pulse 2.4s infinite}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(31,157,107,.4)}70%{box-shadow:0 0 0 6px rgba(31,157,107,0)}100%{box-shadow:0 0 0 0 rgba(31,157,107,0)}}
+  .dot.stale{background:var(--faint);animation:none}.dot.err{background:var(--down);animation:none}.dot.paused{background:var(--gold);animation:none}
+  .meta{font-size:11.5px;color:var(--muted)} .meta b{color:var(--text);font-weight:600}
+  button{font:inherit;color:var(--text);background:var(--panel);border:1px solid var(--border);
+    border-radius:7px;padding:6px 11px;cursor:pointer;transition:.12s;font-size:12px}
+  button:hover{border-color:var(--faint)} button.icon{padding:6px 9px;color:var(--muted)}
+  .toggles{display:flex;gap:3px;flex-wrap:wrap;background:var(--panel2);border:1px solid var(--border);border-radius:8px;padding:2px}
+  .toggles button{padding:4px 10px;font-size:11.5px;border-radius:6px;border:none;background:none;color:var(--muted)}
+  .toggles button.on{background:var(--accent);color:#fff}
+  .card{background:var(--panel);border:1px solid var(--border);border-radius:12px;box-shadow:var(--shadow);margin-bottom:16px}
+  .card .hd{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:14px 18px 10px}
+  .card .hd h2{font-size:13.5px;margin:0;font-weight:600;letter-spacing:.01em}
+  .card .hd .note{font-size:11px;color:var(--muted);font-weight:400}
+  .picker{display:flex;gap:6px;flex-wrap:wrap;padding:0 18px 14px}
+  .chip{display:inline-flex;align-items:center;gap:6px;padding:5px 11px;font-size:12px;border-radius:7px;
+    border:1px solid var(--border);background:var(--panel);color:var(--muted);cursor:pointer;user-select:none}
+  .chip.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:1px;background:var(--border);
+    border:1px solid var(--border);border-radius:12px;overflow:hidden;margin-bottom:16px}
+  .tcard{background:var(--panel);padding:16px 16px 14px;display:flex;flex-direction:column;gap:2px;position:relative}
+  .tcard.frozen{background:var(--goldbg)}
+  .tcard .tk{font-size:13px;font-weight:700;letter-spacing:.01em;display:flex;align-items:center;gap:8px}
+  .tcard .orig{font-size:10px;color:var(--faint);font-weight:500}
+  .tcard .px{font-size:30px;font-weight:600;letter-spacing:-.02em;margin-top:6px;line-height:1.05}
+  .tcard .px .arr{font-size:14px;margin-left:4px}
+  .tcard .hora{font-size:11.5px;color:var(--muted);margin-top:2px}
+  .tcard .hora b{color:var(--text);font-weight:600}
+  .tcard .rowbtns{display:flex;gap:6px;margin-top:12px}
+  .tcard .rowbtns button{flex:1}
+  .btn-grab{background:var(--accent);color:#fff;border-color:var(--accent);font-weight:600}
+  .btn-grab:hover{filter:brightness(1.06);border-color:var(--accent)}
+  .tcard .mini{font-size:11px;color:var(--muted);margin-top:9px;display:flex;justify-content:space-between;gap:8px;
+    border-top:1px solid var(--grid);padding-top:8px}
+  .tcard .mini b{color:var(--text);font-weight:600}
+  .tcard .mini .avg{color:var(--accent);font-weight:700}
+  .pos{color:var(--up)} .neg{color:var(--down)}
+  .actions{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px}
+  .actions .primary{background:var(--accent);color:#fff;border-color:var(--accent);font-weight:600;padding:8px 16px}
+  .actions .warn{color:var(--down)}
+  .tablewrap{overflow-x:auto}
+  table{width:100%;border-collapse:collapse;font-size:12.5px}
+  thead th{background:var(--panel2);text-align:right;padding:9px 13px;font-size:10px;color:var(--muted);
+    text-transform:uppercase;letter-spacing:.04em;font-weight:600;border-bottom:1px solid var(--border);white-space:nowrap}
+  thead th:first-child{text-align:left}
+  tbody td{text-align:right;padding:8px 13px;border-bottom:1px solid var(--grid);white-space:nowrap}
+  tbody td:first-child{text-align:left;font-weight:600}
+  tbody tr:hover{background:var(--panel2)}
+  tfoot td{padding:9px 13px;font-weight:700;border-top:2px solid var(--border);text-align:right}
+  tfoot td:first-child{text-align:left}
+  .avgcell{color:var(--accent);font-weight:700}
+  .foothelp{font-size:11px;color:var(--muted);padding:11px 18px 15px;line-height:1.65}
+  .foothelp b{color:var(--text)}
+  .empty{padding:20px 18px;color:var(--muted);font-size:12px;text-align:center}
+  .err-banner{display:none;background:color-mix(in srgb,var(--down) 10%,transparent);
+    border:1px solid color-mix(in srgb,var(--down) 35%,transparent);color:var(--text);
+    border-radius:10px;padding:10px 14px;font-size:12px;margin-bottom:16px}
+  .del{color:var(--faint);cursor:pointer;font-size:13px;padding:0 4px}
+  .del:hover{color:var(--down)}
+  .pruebatag{display:inline-block;font-size:9.5px;color:var(--muted);border:1px solid var(--border);
+    border-radius:20px;padding:0 7px;font-weight:600}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Local precios <span class="tag">T+0</span></h1>
+      <div class="sub" id="sub">Cargando datos de la hoja Precios del Local…</div>
+    </div>
+    <div class="status">
+      <span class="meta"><span class="dot" id="dot"></span> <span id="statusTxt">Conectando…</span></span>
+      <span class="meta">Hora <b id="clock">—</b></span>
+      <span class="toggles" id="rfToggles" title="Refresco">
+        <button data-rf="5000">5s</button><button data-rf="15000">15s</button><button data-rf="30000">30s</button><button data-rf="0">Manual</button>
+      </span>
+      <button class="icon" id="pauseBtn" title="Pausar / reanudar precios en vivo">⏸ Pausar</button>
+      <button class="icon" id="refreshBtn" title="Actualizar ahora">↻</button>
+      <button class="icon" id="themeBtn" title="Tema">◐</button>
+    </div>
+  </header>
+
+  <div class="err-banner" id="errBanner"></div>
+
+  <div class="card">
+    <div class="hd">
+      <h2>Títulos a seguir <span class="note">· elegí 3-4 · click para agregar o sacar</span></h2>
+    </div>
+    <div class="picker" id="picker"></div>
+  </div>
+
+  <div class="cards" id="cards"></div>
+
+  <div class="actions">
+    <button class="primary" id="grabAll">● Grabar todos (prueba)</button>
+    <button id="pauseBtn2">⏸ Pausar precios</button>
+    <button class="warn" id="resetBtn">Borrar grabaciones</button>
+  </div>
+
+  <div class="card">
+    <div class="hd"><h2>Promedio por título</h2><span class="note" id="avgNote"></span></div>
+    <div class="tablewrap">
+      <table id="avgTbl">
+        <thead><tr><th>Título</th><th>Promedio</th><th>Muestras</th><th>Mín</th><th>Máx</th><th>1ª hora</th><th>Última</th></tr></thead>
+        <tbody id="avgBody"></tbody>
+      </table>
+    </div>
+    <div class="empty" id="avgEmpty">Todavía no grabaste nada. Tocá <b>Grabar</b> en un título (o <b>Grabar todos</b>) para empezar.</div>
+  </div>
+
+  <div class="card">
+    <div class="hd"><h2>Grabaciones <span class="note">· cada muestra que tomaste, la más nueva arriba</span></h2></div>
+    <div class="tablewrap">
+      <table id="logTbl">
+        <thead><tr><th>#</th><th>Título</th><th>Precio</th><th>Hora</th><th>Prueba</th><th></th></tr></thead>
+        <tbody id="logBody"></tbody>
+      </table>
+    </div>
+    <div class="empty" id="logEmpty">Sin grabaciones.</div>
+    <div class="foothelp">
+      El <b>Mid</b> viene en vivo de tu hoja <b>Precios del Local</b> (Byma DMA / Matriz). Tocá <b>Grabar</b> para
+      guardar el precio de un título con su hora; podés grabar varias veces (pruebas). El <b>Promedio por título</b>
+      es el promedio simple de todas las muestras que tomaste de ese título. Las grabaciones quedan guardadas en este
+      navegador aunque recargues; <b>Borrar grabaciones</b> las limpia.
+    </div>
+  </div>
+</div>
+
+<script>
+const SHEET_ID="1YKQ9N--kxhFfGaypCIq_BviUNB_GCkTp0oTMIlXpeqE";
+const GID="1378788257";
+const $=id=>document.getElementById(id);
+const LS={
+  get:(k,d)=>{try{const v=localStorage.getItem(k);return v==null?d:JSON.parse(v);}catch(e){return d;}},
+  set:(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
+};
+
+const state={
+  live:{},          // tk -> {mid, orig, hora}  (hora = hora de la última lectura)
+  order:[],         // orden de títulos disponibles según la hoja
+  tracked:LS.get("lpt0-tracked",null),   // array de tk seguidos
+  frozen:{},        // tk -> {mid, hora} congelado (stop individual)
+  graba:LS.get("lpt0-graba",[]),         // [{tk, px, hora, ts, prueba}]
+  prueba:LS.get("lpt0-prueba",0),        // contador de pruebas (grabar todos)
+  refresh:LS.get("lpt0-refresh",15000),
+  paused:false,
+  theme:LS.get("lpt0-theme",null),
+  lastMid:{}        // tk -> mid previo (para flechas)
+};
+let timer=null, nextAt=0, seq=0;
+
+/* ---------- tema ---------- */
+function applyTheme(){ if(state.theme) document.documentElement.setAttribute("data-theme",state.theme);
+  else document.documentElement.removeAttribute("data-theme"); }
+$("themeBtn").onclick=()=>{ const cur=state.theme|| (matchMedia("(prefers-color-scheme:dark)").matches?"dark":"light");
+  state.theme=cur==="dark"?"light":"dark"; LS.set("lpt0-theme",state.theme); applyTheme(); };
+
+/* ---------- carga JSONP ---------- */
+function load(){
+  return new Promise((res,rej)=>{
+    const cb="__lpcb"+(++seq);
+    const s=document.createElement("script");
+    let done=false;
+    const clean=()=>{ if(done)return; done=true; delete window[cb]; s.remove(); };
+    const to=setTimeout(()=>{ clean(); rej(new Error("timeout")); },12000);
+    window[cb]=r=>{ clearTimeout(to); clean(); res(r); };
+    s.onerror=()=>{ clearTimeout(to); clean(); rej(new Error("net")); };
+    s.src="https://docs.google.com/spreadsheets/d/"+SHEET_ID+"/gviz/tq?gid="+GID+
+          "&headers=0&tqx=out:json;responseHandler:"+cb+"&_="+Date.now();
+    document.head.appendChild(s);
+  });
+}
+const cell=(r,i)=>{ const c=r.c&&r.c[i]; if(!c) return null; return c.v!=null?c.v:(c.f!=null?c.f:null); };
+const num=v=>{ if(typeof v==="number")return v; if(v==null)return null; const n=parseFloat(String(v).replace(",",".")); return isFinite(n)?n:null; };
+
+function parse(resp){
+  const rows=(resp.table&&resp.table.rows)||[];
+  const live={}, order=[];
+  for(const r of rows){
+    const tit=cell(r,2);              // col C = Titulo (…-T0)
+    const mid=num(cell(r,5));         // col F = Mid
+    if(tit==null) continue;
+    const s=String(tit).trim();
+    if(!/-T0$/i.test(s)) continue;    // sólo los títulos T0 del bloque en vivo
+    if(mid==null) continue;
+    const orig=cell(r,1);            // col B = ticker original
+    if(!(s in live)) order.push(s);
+    live[s]={mid, orig:orig?String(orig).trim():"", hora:nowHora()};
+  }
+  return {live,order};
+}
+
+/* ---------- utilidades ---------- */
+function nowHora(){ const d=new Date(); const p=n=>String(n).padStart(2,"0");
+  return p(d.getHours())+":"+p(d.getMinutes())+":"+p(d.getSeconds()); }
+const fmt=(v,d=5)=>v==null||!isFinite(v)?"—":Number(v).toLocaleString("es-AR",{minimumFractionDigits:d,maximumFractionDigits:d});
+
+/* ---------- estado tracked ---------- */
+function ensureTracked(){
+  if(!state.tracked){
+    // default: los 4 que usa en el sheet, si existen; si no, los primeros 4
+    const pref=["TZXO6-T0","X30S6-T0","S16O6-T0","S13N6-T0"].filter(t=>state.order.includes(t));
+    state.tracked = pref.length? pref : state.order.slice(0,4);
+    LS.set("lpt0-tracked",state.tracked);
+  } else {
+    state.tracked=state.tracked.filter(t=>state.order.includes(t));
+  }
+}
+function toggleTrack(tk){
+  const i=state.tracked.indexOf(tk);
+  if(i>=0) state.tracked.splice(i,1); else state.tracked.push(tk);
+  // reordenar según la hoja
+  state.tracked.sort((a,b)=>state.order.indexOf(a)-state.order.indexOf(b));
+  LS.set("lpt0-tracked",state.tracked);
+  renderPicker(); renderCards();
+}
+
+/* ---------- grabar ---------- */
+function priceOf(tk){ if(state.frozen[tk]) return state.frozen[tk].mid; return state.live[tk]?state.live[tk].mid:null; }
+function horaOf(tk){ if(state.frozen[tk]) return state.frozen[tk].hora; return state.live[tk]?state.live[tk].hora:nowHora(); }
+
+function grabarUno(tk, prueba){
+  const px=priceOf(tk); if(px==null) return false;
+  state.graba.push({tk, px, hora:horaOf(tk), ts:Date.now(), prueba:prueba||0});
+  LS.set("lpt0-graba",state.graba);
+  return true;
+}
+function grabarTodos(){
+  state.prueba++; LS.set("lpt0-prueba",state.prueba);
+  let n=0; for(const tk of state.tracked){ if(grabarUno(tk,state.prueba)) n++; }
+  render();
+  flash($("grabAll"), n?("✓ Prueba "+state.prueba+" · "+n+" grabados"):"sin precios");
+}
+function toggleFreeze(tk){
+  if(state.frozen[tk]) delete state.frozen[tk];
+  else if(state.live[tk]) state.frozen[tk]={mid:state.live[tk].mid, hora:state.live[tk].hora};
+  renderCards();
+}
+
+/* ---------- promedios ---------- */
+function averages(){
+  const by={};
+  for(const g of state.graba){ (by[g.tk]=by[g.tk]||[]).push(g); }
+  const out=[];
+  for(const tk of Object.keys(by)){
+    const arr=by[tk], px=arr.map(a=>a.px);
+    const avg=px.reduce((s,v)=>s+v,0)/px.length;
+    out.push({tk, n:px.length, avg, min:Math.min(...px), max:Math.max(...px),
+      first:arr[0].hora, last:arr[arr.length-1].hora});
+  }
+  // orden: seguidos primero según tracked, luego el resto
+  out.sort((a,b)=>{ const ia=state.tracked.indexOf(a.tk), ib=state.tracked.indexOf(b.tk);
+    return (ia<0?99:ia)-(ib<0?99:ib) || a.tk.localeCompare(b.tk); });
+  return out;
+}
+
+/* ---------- render ---------- */
+function renderPicker(){
+  $("picker").innerHTML=state.order.map(tk=>{
+    const on=state.tracked.includes(tk);
+    return `<span class="chip ${on?'on':''}" data-tk="${tk}">${on?'✓ ':''}${tk}</span>`;
+  }).join("") || '<span class="note" style="color:var(--muted)">Sin títulos en la hoja.</span>';
+  $("picker").querySelectorAll(".chip").forEach(c=>c.onclick=()=>toggleTrack(c.dataset.tk));
+}
+
+function renderCards(){
+  const box=$("cards");
+  if(!state.tracked.length){ box.innerHTML='<div class="tcard"><div class="hora">Elegí al menos un título arriba.</div></div>'; return; }
+  const avgMap={}; averages().forEach(a=>avgMap[a.tk]=a);
+  box.innerHTML=state.tracked.map(tk=>{
+    const L=state.live[tk], fr=state.frozen[tk], px=priceOf(tk), prev=state.lastMid[tk];
+    let arr=""; if(!fr && prev!=null && px!=null && px!==prev){ arr= px>prev?`<span class="arr pos">▲</span>`:`<span class="arr neg">▼</span>`; }
+    const a=avgMap[tk];
+    return `<div class="tcard ${fr?'frozen':''}" data-tk="${tk}">
+      <div class="tk">${tk} ${fr?'<span class="pruebatag">stop</span>':''}</div>
+      <div class="orig">${L&&L.orig?L.orig:''}</div>
+      <div class="px">${fmt(px)}${arr}</div>
+      <div class="hora">hora <b>${fr?fr.hora:(L?L.hora:'—')}</b></div>
+      <div class="rowbtns">
+        <button class="btn-grab" data-act="grab" data-tk="${tk}">Grabar</button>
+        <button data-act="freeze" data-tk="${tk}">${fr?'Reanudar':'Stop'}</button>
+      </div>
+      <div class="mini"><span>muestras <b>${a?a.n:0}</b></span><span>prom <span class="avg">${a?fmt(a.avg):'—'}</span></span></div>
+    </div>`;
+  }).join("");
+  box.querySelectorAll("button[data-act]").forEach(b=>{
+    b.onclick=()=>{ const tk=b.dataset.tk;
+      if(b.dataset.act==="grab"){ if(grabarUno(tk,0)){ render(); flash(b,"✓"); } }
+      else toggleFreeze(tk);
+    };
+  });
+}
+
+function renderTables(){
+  const avg=averages();
+  $("avgEmpty").style.display=avg.length?"none":"block";
+  $("avgTbl").style.display=avg.length?"":"none";
+  $("avgBody").innerHTML=avg.map(a=>`<tr>
+    <td>${a.tk}</td><td class="avgcell">${fmt(a.avg)}</td><td>${a.n}</td>
+    <td>${fmt(a.min)}</td><td>${fmt(a.max)}</td><td>${a.first}</td><td>${a.last}</td></tr>`).join("");
+  $("avgNote").textContent = avg.length? (state.graba.length+" grabaciones · "+avg.length+" títulos") : "";
+
+  const log=state.graba.slice().reverse();
+  $("logEmpty").style.display=log.length?"none":"block";
+  $("logTbl").style.display=log.length?"":"none";
+  $("logBody").innerHTML=log.map((g,i)=>`<tr>
+    <td>${state.graba.length-i}</td><td>${g.tk}</td><td>${fmt(g.px)}</td><td>${g.hora}</td>
+    <td>${g.prueba?('<span class="pruebatag">P'+g.prueba+'</span>'):'—'}</td>
+    <td><span class="del" data-idx="${state.graba.length-1-i}" title="borrar">✕</span></td></tr>`).join("");
+  $("logBody").querySelectorAll(".del").forEach(d=>d.onclick=()=>{ state.graba.splice(+d.dataset.idx,1); LS.set("lpt0-graba",state.graba); render(); });
+}
+
+function render(){ renderPicker(); renderCards(); renderTables(); }
+
+/* ---------- feedback botón ---------- */
+function flash(btn,msg){ const t=btn.textContent; btn.textContent=msg; btn.disabled=true;
+  setTimeout(()=>{ btn.textContent=t; btn.disabled=false; },900); }
+
+/* ---------- ciclo de datos ---------- */
+function setStatus(kind,txt){ const d=$("dot"); d.className="dot"+(kind?(" "+kind):""); $("statusTxt").textContent=txt; }
+
+async function refresh(manual){
+  if(state.paused && !manual) return;
+  try{
+    const resp=await load();
+    const {live,order}=parse(resp);
+    // guardar mid previo para flechas
+    for(const tk in state.live) state.lastMid[tk]=state.live[tk].mid;
+    state.live=live; state.order=order;
+    ensureTracked();
+    $("sub").innerHTML="Mid en vivo desde tu hoja <b>Precios del Local</b> · Byma DMA (Matriz) · "+order.length+" títulos disponibles";
+    setStatus(state.paused?"paused":"", state.paused?"En pausa":("Actualizado "+nowHora()));
+    render();
+  }catch(e){
+    setStatus("err","Error al leer la hoja");
+    $("errBanner").style.display="block";
+    $("errBanner").innerHTML="No pude leer la hoja (¿está compartida como <b>cualquiera con el link</b>?). Reintento en el próximo ciclo. <span class='muted'>("+e.message+")</span>";
+  }
+}
+function schedule(){
+  if(timer) clearInterval(timer); timer=null;
+  if(state.refresh>0 && !state.paused){
+    nextAt=Date.now()+state.refresh;
+    timer=setInterval(()=>{ if(Date.now()>=nextAt){ nextAt=Date.now()+state.refresh; refresh(); } },1000);
+  }
+}
+function setRefresh(ms){ state.refresh=ms; LS.set("lpt0-refresh",ms);
+  document.querySelectorAll("#rfToggles button").forEach(b=>b.classList.toggle("on",+b.dataset.rf===ms));
+  schedule(); }
+function setPaused(p){ state.paused=p;
+  $("pauseBtn").textContent=p?"▶ Reanudar":"⏸ Pausar";
+  $("pauseBtn2").textContent=p?"▶ Reanudar precios":"⏸ Pausar precios";
+  setStatus(p?"paused":"", p?"En pausa":("Actualizado "+nowHora()));
+  schedule(); }
+
+/* ---------- wiring ---------- */
+$("refreshBtn").onclick=()=>refresh(true);
+$("pauseBtn").onclick=()=>setPaused(!state.paused);
+$("pauseBtn2").onclick=()=>setPaused(!state.paused);
+$("grabAll").onclick=()=>grabarTodos();
+$("resetBtn").onclick=()=>{ if(confirm("¿Borrar todas las grabaciones?")){ state.graba=[]; state.prueba=0;
+  LS.set("lpt0-graba",[]); LS.set("lpt0-prueba",0); render(); } };
+document.querySelectorAll("#rfToggles button").forEach(b=>b.onclick=()=>setRefresh(+b.dataset.rf));
+
+/* ---------- start ---------- */
+function start(){
+  applyTheme();
+  setRefresh(state.refresh);
+  setInterval(()=>{ $("clock").textContent=nowHora(); },1000);
+  $("clock").textContent=nowHora();
+  render();
+  refresh(true);
+}
+start();
+</script>
+</body>
+</html>
