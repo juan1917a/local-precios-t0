@@ -130,6 +130,7 @@
   <div class="actions">
     <button class="primary" id="grabAll">● Grabar todos (prueba)</button>
     <button id="pauseBtn2">⏸ Pausar precios</button>
+    <button id="xlsBtn">⬇ Excel</button>
     <button class="warn" id="resetBtn">Borrar grabaciones</button>
   </div>
 
@@ -142,6 +143,12 @@
       </table>
     </div>
     <div class="empty" id="avgEmpty">Todavía no grabaste nada. Tocá <b>Grabar</b> en un título (o <b>Grabar todos</b>) para empezar.</div>
+  </div>
+
+  <div class="card">
+    <div class="hd"><h2>Precios diarios</h2><span class="note" id="histNote">un punto por día · snapshot automático al cierre</span></div>
+    <div style="padding:8px 4px"><canvas id="histChart" height="150"></canvas></div>
+    <div class="empty" id="histEmpty">Todavía no hay historial. Se va llenando con un snapshot por día (arranca mañana).</div>
   </div>
 
   <div class="card">
@@ -162,6 +169,8 @@
   </div>
 </div>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script>
 const SHEET_ID="1YKQ9N--kxhFfGaypCIq_BviUNB_GCkTp0oTMIlXpeqE";
 const GID="1378788257";
@@ -229,7 +238,7 @@ function parse(resp){
 /* ---------- utilidades ---------- */
 function nowHora(){ const d=new Date(); const p=n=>String(n).padStart(2,"0");
   return p(d.getHours())+":"+p(d.getMinutes())+":"+p(d.getSeconds()); }
-const fmt=(v,d=5)=>v==null||!isFinite(v)?"—":Number(v).toLocaleString("es-AR",{minimumFractionDigits:d,maximumFractionDigits:d});
+const fmt=(v,d=7)=>v==null||!isFinite(v)?"—":Number(v).toLocaleString("es-AR",{minimumFractionDigits:d,maximumFractionDigits:d});
 
 /* ---------- estado tracked ---------- */
 function ensureTracked(){
@@ -389,7 +398,52 @@ function setPaused(p){ state.paused=p;
   setStatus(p?"paused":"", p?"En pausa":("Actualizado "+nowHora()));
   schedule(); }
 
+/* ---------- exportar a Excel ---------- */
+function exportXlsx(){
+  if(typeof XLSX==="undefined"){ alert("No cargó la librería de Excel, reintentá en unos segundos."); return; }
+  const wb=XLSX.utils.book_new();
+  const avg=averages();
+  const aoaAvg=[["Título","Promedio","Muestras","Mín","Máx","1ª hora","Última"]]
+    .concat(avg.map(a=>[a.tk,a.avg,a.n,a.min,a.max,a.first,a.last]));
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoaAvg), "Promedios");
+  const aoaLive=[["Título","Ticker","Mid","Hora"]]
+    .concat(state.tracked.map(tk=>{const L=state.live[tk];return [tk, L?L.orig:"", priceOf(tk), horaOf(tk)];}));
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoaLive), "En vivo");
+  const aoaGr=[["#","Título","Precio","Hora","Prueba"]]
+    .concat(state.graba.map((g,i)=>[i+1,g.tk,g.px,g.hora,g.prueba||""]));
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoaGr), "Grabaciones");
+  const d=new Date(), p=n=>String(n).padStart(2,"0");
+  XLSX.writeFile(wb, "precios-t0-"+d.getFullYear()+p(d.getMonth()+1)+p(d.getDate())+".xlsx");
+}
+
+/* ---------- gráfico diario (lee data/history.json que llena el Action) ---------- */
+let histChartObj=null;
+async function loadHistory(){
+  try{
+    const r=await fetch("./data/history.json?_="+Date.now());
+    if(!r.ok) return;
+    const data=await r.json();
+    renderChart(Array.isArray(data)?data:[]);
+  }catch(e){ /* sin historial todavía */ }
+}
+function renderChart(hist){
+  if(!hist.length || typeof Chart==="undefined") return;
+  const el=$("histEmpty"); if(el) el.style.display="none";
+  const dates=hist.map(h=>h.date);
+  const titset={}; hist.forEach(h=>Object.keys(h.prices||{}).forEach(t=>titset[t]=1));
+  const tits=Object.keys(titset).sort();
+  const palette=["#345995","#1f9d6b","#d0485f","#b58a1b","#7a5cc0","#2b9fb3","#c25b2b"];
+  const ds=tits.map((t,i)=>({label:t, data:hist.map(h=>h.prices&&h.prices[t]!=null?h.prices[t]:null),
+    borderColor:palette[i%palette.length], backgroundColor:palette[i%palette.length], tension:.25, spanGaps:true, pointRadius:2, borderWidth:2}));
+  if(histChartObj) histChartObj.destroy();
+  histChartObj=new Chart($("histChart").getContext("2d"), {type:"line", data:{labels:dates, datasets:ds},
+    options:{responsive:true, interaction:{mode:"index",intersect:false},
+      plugins:{legend:{labels:{boxWidth:12, font:{size:11}}}},
+      scales:{y:{ticks:{callback:v=>Number(v).toLocaleString("es-AR",{minimumFractionDigits:4,maximumFractionDigits:4})}}}}});
+}
+
 /* ---------- wiring ---------- */
+$("xlsBtn").onclick=exportXlsx;
 $("refreshBtn").onclick=()=>refresh(true);
 $("pauseBtn").onclick=()=>setPaused(!state.paused);
 $("pauseBtn2").onclick=()=>setPaused(!state.paused);
@@ -406,6 +460,7 @@ function start(){
   $("clock").textContent=nowHora();
   render();
   refresh(true);
+  loadHistory();
 }
 start();
 </script>
