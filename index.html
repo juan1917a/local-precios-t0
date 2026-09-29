@@ -146,12 +146,6 @@
   </div>
 
   <div class="card">
-    <div class="hd"><h2>Precios diarios</h2><span class="note" id="histNote">un punto por día · snapshot automático al cierre</span></div>
-    <div style="padding:8px 4px"><canvas id="histChart" height="150"></canvas></div>
-    <div class="empty" id="histEmpty">Todavía no hay historial. Se va llenando con un snapshot por día (arranca mañana).</div>
-  </div>
-
-  <div class="card">
     <div class="hd"><h2>Grabaciones <span class="note">· cada muestra que tomaste, la más nueva arriba</span></h2></div>
     <div class="tablewrap">
       <table id="logTbl">
@@ -170,7 +164,6 @@
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script>
 const SHEET_ID="1YKQ9N--kxhFfGaypCIq_BviUNB_GCkTp0oTMIlXpeqE";
 const GID="1378788257";
@@ -416,32 +409,6 @@ function exportXlsx(){
   XLSX.writeFile(wb, "precios-t0-"+d.getFullYear()+p(d.getMonth()+1)+p(d.getDate())+".xlsx");
 }
 
-/* ---------- gráfico diario (lee data/history.json que llena el Action) ---------- */
-let histChartObj=null;
-async function loadHistory(){
-  try{
-    const r=await fetch("./data/history.json?_="+Date.now());
-    if(!r.ok) return;
-    const data=await r.json();
-    renderChart(Array.isArray(data)?data:[]);
-  }catch(e){ /* sin historial todavía */ }
-}
-function renderChart(hist){
-  if(!hist.length || typeof Chart==="undefined") return;
-  const el=$("histEmpty"); if(el) el.style.display="none";
-  const dates=hist.map(h=>h.date);
-  const titset={}; hist.forEach(h=>Object.keys(h.prices||{}).forEach(t=>titset[t]=1));
-  const tits=Object.keys(titset).sort();
-  const palette=["#345995","#1f9d6b","#d0485f","#b58a1b","#7a5cc0","#2b9fb3","#c25b2b"];
-  const ds=tits.map((t,i)=>({label:t, data:hist.map(h=>h.prices&&h.prices[t]!=null?h.prices[t]:null),
-    borderColor:palette[i%palette.length], backgroundColor:palette[i%palette.length], tension:.25, spanGaps:true, pointRadius:2, borderWidth:2}));
-  if(histChartObj) histChartObj.destroy();
-  histChartObj=new Chart($("histChart").getContext("2d"), {type:"line", data:{labels:dates, datasets:ds},
-    options:{responsive:true, interaction:{mode:"index",intersect:false},
-      plugins:{legend:{labels:{boxWidth:12, font:{size:11}}}},
-      scales:{y:{ticks:{callback:v=>Number(v).toLocaleString("es-AR",{minimumFractionDigits:4,maximumFractionDigits:4})}}}}});
-}
-
 /* ---------- wiring ---------- */
 $("xlsBtn").onclick=exportXlsx;
 $("refreshBtn").onclick=()=>refresh(true);
@@ -460,7 +427,6 @@ function start(){
   $("clock").textContent=nowHora();
   render();
   refresh(true);
-  loadHistory();
 }
 start();
 </script>
