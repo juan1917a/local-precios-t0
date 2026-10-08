@@ -93,6 +93,15 @@
     border-radius:10px;padding:10px 14px;font-size:12px;margin-bottom:16px}
   .del{color:var(--faint);cursor:pointer;font-size:13px;padding:0 4px}
   .del:hover{color:var(--down)}
+  .autobar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:0 18px 14px;font-size:12px;color:var(--muted)}
+  .slot{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:7px;border:1px solid var(--border);
+    background:var(--panel2);font-size:12px;color:var(--muted);font-weight:600}
+  .slot.done{border-color:var(--up);color:var(--up)}
+  .slot.next{border-color:var(--accent);color:var(--accent)}
+  .slot.miss{color:var(--faint);text-decoration:line-through}
+  .switch{display:inline-flex;align-items:center;gap:7px;cursor:pointer;user-select:none;color:var(--text);font-weight:600}
+  .switch input{accent-color:var(--accent);width:15px;height:15px;margin:0}
+  .autotag{display:inline-block;font-size:9.5px;color:#fff;background:var(--accent);border-radius:20px;padding:0 7px;font-weight:600;margin-left:4px}
   .pruebatag{display:inline-block;font-size:9.5px;color:var(--muted);border:1px solid var(--border);
     border-radius:20px;padding:0 7px;font-weight:600}
 </style>
@@ -123,6 +132,17 @@
       <h2>Títulos a seguir <span class="note">· elegí 3-4 · click para agregar o sacar</span></h2>
     </div>
     <div class="picker" id="picker"></div>
+  </div>
+
+  <div class="card">
+    <div class="hd">
+      <h2>Grabación automática <span class="note">· graba todos los títulos seguidos a la hora fijada (hora Argentina)</span></h2>
+      <label class="switch"><input type="checkbox" id="autoChk"> Activada</label>
+    </div>
+    <div class="autobar">
+      <span id="slots"></span>
+      <span id="autoNote"></span>
+    </div>
   </div>
 
   <div class="cards" id="cards"></div>
@@ -158,7 +178,9 @@
       El <b>Mid</b> viene en vivo de tu hoja <b>Precios del Local</b> (Byma DMA / Matriz). Tocá <b>Grabar</b> para
       guardar el precio de un título con su hora; podés grabar varias veces (pruebas). El <b>Promedio por título</b>
       es el promedio simple de todas las muestras que tomaste de ese título. Las grabaciones quedan guardadas en este
-      navegador aunque recargues; <b>Borrar grabaciones</b> las limpia.
+      navegador aunque recargues; <b>Borrar grabaciones</b> las limpia. La <b>grabación automática</b> graba todos
+      los títulos seguidos a las 15:00, 15:30 y 16:00 (hora Argentina) con un precio recién leído de la hoja; necesita esta
+      pestaña abierta (puede estar en segundo plano) y la PC despierta. Si la pestaña estuvo dormida, graba igual hasta 5 minutos después.
     </div>
   </div>
 </div>
@@ -186,6 +208,62 @@ const state={
   lastMid:{}        // tk -> mid previo (para flechas)
 };
 let timer=null, nextAt=0, seq=0;
+
+/* ---------- grabación automática ---------- */
+const AUTO_SLOTS=["15:00","15:30","16:00"];   // hora Argentina
+const AUTO_WINDOW_MIN=5;                       // si la página estaba dormida, graba igual dentro de estos minutos
+state.auto=LS.get("lpt0-auto",true);
+function arNow(){ // fecha/hora en America/Buenos_Aires, sin depender del huso de la PC
+  const parts=new Intl.DateTimeFormat("en-CA",{timeZone:"America/Buenos_Aires",year:"numeric",month:"2-digit",day:"2-digit",
+    hour:"2-digit",minute:"2-digit",second:"2-digit",hourCycle:"h23"}).formatToParts(new Date());
+  const o={}; parts.forEach(p=>o[p.type]=p.value);
+  return {date:o.year+"-"+o.month+"-"+o.day, min:(+o.hour)*60+(+o.minute), sec:+o.second};
+}
+const slotMin=s=>{ const [h,m]=s.split(":").map(Number); return h*60+m; };
+function autoDone(){ const d=LS.get("lpt0-autodone",{}); const t=arNow().date; return d.date===t? d : {date:t, slots:{}}; }
+let autoBusy=false, autoRetryAt=0;
+async function autoTick(){
+  const now=arNow(), done=autoDone();
+  if(state.auto && !autoBusy){
+    for(const s of AUTO_SLOTS){
+      const m=slotMin(s);
+      if(done.slots[s]) continue;
+      if(now.min>=m && now.min<m+AUTO_WINDOW_MIN){
+        if(Date.now()<autoRetryAt) break;
+        autoBusy=true;
+        let n=0;
+        try{ await refresh(true); if(state.tracked&&state.tracked.length) n=grabarTodos("auto "+s); }catch(e){}
+        finally{ autoBusy=false; }
+        const d2=autoDone();
+        if(n){ d2.slots[s]=nowHora(); LS.set("lpt0-autodone",d2); }
+        else { autoRetryAt=Date.now()+20000; }   // sin precios: reintenta cada 20s dentro de la ventana
+        break;
+      }
+    }
+  }
+  renderAuto();
+}
+function renderAuto(){
+  const now=arNow(), done=autoDone();
+  let nextSet=false;
+  $("slots").innerHTML=AUTO_SLOTS.map(s=>{
+    const m=slotMin(s), v=done.slots[s];
+    let cls="", lbl=s;
+    if(v){ cls="done"; lbl="✓ "+s; }
+    else if(now.min>=m+AUTO_WINDOW_MIN){ cls="miss"; lbl=s+" (no grabado)"; }
+    else if(!nextSet && state.auto){ cls="next"; nextSet=true; }
+    return `<span class="slot ${cls}" title="${v?'grabado '+v:''}">${lbl}</span>`;
+  }).join(" ");
+  const pend=AUTO_SLOTS.find(s=>!done.slots[s] && now.min<slotMin(s)+AUTO_WINDOW_MIN);
+  let note;
+  if(!state.auto) note="Desactivada.";
+  else if(pend){
+    const left=slotMin(pend)*60-(now.min*60+now.sec);
+    note= left>0 ? ("Próxima en "+(left>=3600?Math.floor(left/3600)+"h ":"")+Math.floor((left%3600)/60)+"m "+(left%60)+"s · dejá esta pestaña abierta y la PC sin suspender")
+                 : (autoRetryAt>Date.now()?"Sin precios de la hoja, reintentando…":"Grabando…");
+  } else note="Listo por hoy.";
+  $("autoNote").textContent=note;
+}
 
 /* ---------- tema ---------- */
 function applyTheme(){ if(state.theme) document.documentElement.setAttribute("data-theme",state.theme);
@@ -257,17 +335,19 @@ function toggleTrack(tk){
 function priceOf(tk){ if(state.frozen[tk]) return state.frozen[tk].mid; return state.live[tk]?state.live[tk].mid:null; }
 function horaOf(tk){ if(state.frozen[tk]) return state.frozen[tk].hora; return state.live[tk]?state.live[tk].hora:nowHora(); }
 
-function grabarUno(tk, prueba){
+function grabarUno(tk, prueba, auto){
   const px=priceOf(tk); if(px==null) return false;
-  state.graba.push({tk, px, hora:horaOf(tk), ts:Date.now(), prueba:prueba||0});
+  const g={tk, px, hora:horaOf(tk), ts:Date.now(), prueba:prueba||0}; if(auto) g.auto=auto;
+  state.graba.push(g);
   LS.set("lpt0-graba",state.graba);
   return true;
 }
-function grabarTodos(){
+function grabarTodos(auto){
   state.prueba++; LS.set("lpt0-prueba",state.prueba);
-  let n=0; for(const tk of state.tracked){ if(grabarUno(tk,state.prueba)) n++; }
+  let n=0; for(const tk of state.tracked){ if(grabarUno(tk,state.prueba,auto)) n++; }
   render();
-  flash($("grabAll"), n?("✓ Prueba "+state.prueba+" · "+n+" grabados"):"sin precios");
+  flash($("grabAll"), n?("✓ Prueba "+state.prueba+(auto?" ("+auto+")":"")+" · "+n+" grabados"):"sin precios");
+  return n;
 }
 function toggleFreeze(tk){
   if(state.frozen[tk]) delete state.frozen[tk];
@@ -294,6 +374,7 @@ function averages(){
 
 /* ---------- render ---------- */
 function renderPicker(){
+  if(!state.tracked) return;
   $("picker").innerHTML=state.order.map(tk=>{
     const on=state.tracked.includes(tk);
     return `<span class="chip ${on?'on':''}" data-tk="${tk}">${on?'✓ ':''}${tk}</span>`;
@@ -303,6 +384,7 @@ function renderPicker(){
 
 function renderCards(){
   const box=$("cards");
+  if(!state.tracked) return;
   if(!state.tracked.length){ box.innerHTML='<div class="tcard"><div class="hora">Elegí al menos un título arriba.</div></div>'; return; }
   const avgMap={}; averages().forEach(a=>avgMap[a.tk]=a);
   box.innerHTML=state.tracked.map(tk=>{
@@ -343,7 +425,7 @@ function renderTables(){
   $("logTbl").style.display=log.length?"":"none";
   $("logBody").innerHTML=log.map((g,i)=>`<tr>
     <td>${state.graba.length-i}</td><td>${g.tk}</td><td>${fmt(g.px)}</td><td>${g.hora}</td>
-    <td>${g.prueba?('<span class="pruebatag">P'+g.prueba+'</span>'):'—'}</td>
+    <td>${g.prueba?('<span class="pruebatag">P'+g.prueba+'</span>'):'—'}${g.auto?'<span class="autotag">'+g.auto+'</span>':''}</td>
     <td><span class="del" data-idx="${state.graba.length-1-i}" title="borrar">✕</span></td></tr>`).join("");
   $("logBody").querySelectorAll(".del").forEach(d=>d.onclick=()=>{ state.graba.splice(+d.dataset.idx,1); LS.set("lpt0-graba",state.graba); render(); });
 }
@@ -402,8 +484,8 @@ function exportXlsx(){
   const aoaLive=[["Título","Ticker","Mid","Hora"]]
     .concat(state.tracked.map(tk=>{const L=state.live[tk];return [tk, L?L.orig:"", priceOf(tk), horaOf(tk)];}));
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoaLive), "En vivo");
-  const aoaGr=[["#","Título","Precio","Hora","Prueba"]]
-    .concat(state.graba.map((g,i)=>[i+1,g.tk,g.px,g.hora,g.prueba||""]));
+  const aoaGr=[["#","Título","Precio","Hora","Prueba","Origen"]]
+    .concat(state.graba.map((g,i)=>[i+1,g.tk,g.px,g.hora,g.prueba||"",g.auto||"manual"]));
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoaGr), "Grabaciones");
   const d=new Date(), p=n=>String(n).padStart(2,"0");
   XLSX.writeFile(wb, "precios-t0-"+d.getFullYear()+p(d.getMonth()+1)+p(d.getDate())+".xlsx");
@@ -418,14 +500,17 @@ $("grabAll").onclick=()=>grabarTodos();
 $("resetBtn").onclick=()=>{ if(confirm("¿Borrar todas las grabaciones?")){ state.graba=[]; state.prueba=0;
   LS.set("lpt0-graba",[]); LS.set("lpt0-prueba",0); render(); } };
 document.querySelectorAll("#rfToggles button").forEach(b=>b.onclick=()=>setRefresh(+b.dataset.rf));
+$("autoChk").checked=state.auto;
+$("autoChk").onchange=e=>{ state.auto=e.target.checked; LS.set("lpt0-auto",state.auto); renderAuto(); };
 
 /* ---------- start ---------- */
 function start(){
   applyTheme();
   setRefresh(state.refresh);
-  setInterval(()=>{ $("clock").textContent=nowHora(); },1000);
+  setInterval(()=>{ $("clock").textContent=nowHora(); autoTick(); },1000);
+  document.addEventListener("visibilitychange",()=>{ if(!document.hidden) autoTick(); });
   $("clock").textContent=nowHora();
-  render();
+  render(); renderAuto();
   refresh(true);
 }
 start();
