@@ -293,15 +293,17 @@ function parse(resp){
   const rows=(resp.table&&resp.table.rows)||[];
   const live={}, order=[];
   for(const r of rows){
-    const tit=cell(r,2);              // col C = Titulo (…-T0)
+    const orig=cell(r,1)!=null?String(cell(r,1)).trim():"";   // col B = ticker original
+    if(/^prueba/i.test(orig)) break;  // fin del bloque en vivo (abajo están las pruebas manuales)
+    const tit=cell(r,2)!=null?String(cell(r,2)).trim():"";    // col C = Titulo (…-T0), puede venir vacía
     const mid=num(cell(r,5));         // col F = Mid
-    if(tit==null) continue;
-    const s=String(tit).trim();
-    if(!/-T0$/i.test(s)) continue;    // sólo los títulos T0 del bloque en vivo
     if(mid==null) continue;
-    const orig=cell(r,1);            // col B = ticker original
+    let s="";
+    if(/-T0$/i.test(tit)) s=tit;
+    else if(/^[A-Z0-9]{3,8}$/i.test(orig)) s=orig.toUpperCase()+"-T0";
+    if(!s) continue;
     if(!(s in live)) order.push(s);
-    live[s]={mid, orig:orig?String(orig).trim():"", hora:nowHora()};
+    live[s]={mid, orig, hora:nowHora()};
   }
   return {live,order};
 }
